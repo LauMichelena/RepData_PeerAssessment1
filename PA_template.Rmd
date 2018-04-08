@@ -1,0 +1,153 @@
+---
+output:
+  github_document: default
+  html_document: default
+---
+----
+title: "Course Project 1"
+author: "Laura Michelena"
+date: "29 March 2018"
+output: html_document: keep_md: true
+---
+ 
+```{r setting global options, echo=TRUE}
+library(knitr)
+opts_chunk$set(echo=TRUE)
+```
+
+
+##Loading and preprocessing the data
+
+First we load the data in the working directory. The transformations necessary for each computation are in the corresponding sections
+```{r loading and processing the data}
+df<- read.csv("activity.csv")
+```
+
+
+## What is mean total number of steps taken per day?
+Now we answer the first question. First, we create a variable of total steps per day. The following histogram shows the total of daily steps and the comparison of the distibution with the mean and median.
+
+```{r, calculate total steps per day}
+library(dplyr)
+daily<- df%>% 
+        group_by(date) %>% 
+        summarise(steps = sum(steps, na.rm=TRUE))%>%
+        group_by(date)
+hist(daily$steps, col = "gray", xlab= "Number of steps", main = "Total number of steps per day")
+        abline (v= c(mean(daily$steps), median(daily$steps)), col= c("green", "blue"))
+        legend( "topright", pch = "_", col=c("green", "blue"), legend=c("mean", "median"))
+```
+ 
+The following table shows the mean and median of the total number of steps taken per day (the table only shows the first ten days to make it more readable).
+
+```{r, mean and median}
+sumdaily<- summarise(daily, Mean = mean(steps, na.rm=TRUE), Median = median(steps, na.rm=TRUE))
+sumdaily
+```
+
+## What is the average daily activity pattern?
+Now we answer the second question. To do that, first we group by intervals and then we take the average per interval. This plot shows the time series of the average steps taken.
+
+```{r, interval average}
+df$interval<-factor(df$interval)
+inter<- df%>% 
+        group_by(interval) %>% 
+        summarise(steps = mean(steps, na.rm=TRUE)) %>%
+        group_by(interval)
+
+plot(inter$interval, inter$steps, xlab="5 minute intervals", ylab="average steps taken", type="n")
+        title(main= "Average daily activity pattern")
+        lines(inter$interval, inter$steps, type="l")
+        abline (v= inter$interval[which.max(inter$steps)], col= "green")
+        legend( "topright", pch = "_", col="green", legend="max")
+```
+
+```{r, interval maximun steps}
+summarise(inter, "5-min interval" = inter$interval[which.max(inter$steps)], "Maximun number of steps"= max(steps))
+```
+
+This table shows the maximun number of steps taken as average in a 5-min interval (206), and the corresponding 5-min interval (835). This corresponds with what's shown in the graphic.
+
+##Imputing missing values
+First, we calculate the total number of missing values
+```{r, misssing vales}
+sum(is.na(df))
+```
+
+All the missing values will be substituded with the mean for the corresponding 5 min interval.
+
+```{r, substitude missing values} 
+g<- merge(df,inter, by.x="interval", by.y="interval")
+g$steps.x[is.na(g$steps.x)]<- g$steps.y[is.na(g$steps.x)]
+df2<-g[,1:3]
+df2<-rename(df2, steps=steps.x)
+```
+
+Now we make a histogram of the total number of steps taken each day. On the left we can see the histogram with the imputed missing values, on the right, the original histogram, which is just repeated here for visual purposes.
+This comparison shows than imputing NA values has a big impact on the data, with NA values the distribution seems more skewed to the left, but when they are removed the distribution is more even.
+
+```{r, histogram 2}
+daily2<- df2%>% 
+        group_by(date) %>% 
+        summarise(steps = sum(steps, na.rm=TRUE))%>%
+        group_by(date)
+par(mfrow=c(1,2))
+hist(daily2$steps, col = "gray", xlab= "Number of steps", main = "Total number of steps per day \nwith imputed NA values")
+hist(daily$steps, col = "gray", xlab= "Number of steps", main = "Total number of steps per day \nwithout imputing NA values")
+       
+```
+
+This table shows the mean and median per day with imputed NA values.
+
+```{r, mean and median 2}
+sumdaily2<- summarise(daily2, Mean = mean(steps), Median = median(steps))
+sumdaily2
+```
+
+Now we compare both calculations of mean and medians with and without NA values.
+
+The results show that both for the mean and the median, imputing the NA values affects the calculations, the 2304 NA values that were substituded had a maximun difference of 10766.19 steps taken in an interval, with an average change of 1411.959 steps.
+
+```{r, comparison}
+d<-merge(sumdaily,sumdaily2, by.x="date", by.y= "date")
+d<- mutate(d, "MeanDif" = (Mean.y-Mean.x), "MedianDif"= (Median.y-Median.x)) 
+results<-summarise(d, "Average Dif in mean"= mean(MeanDif), "Min Dif in mean"= min(MeanDif), "Max Dif in mean"= max(MeanDif), "Average Dif in median"= mean(MedianDif), "Min Dif in median"= min(MedianDif), "Max Dif in median"= max(MedianDif))
+results
+```
+
+
+
+
+##Are there differences in activity patterns between weekdays and weekends?
+Finally, the last question. To answer this question, first we create a new variable that inidcates whether a give date was a eekday or a weekend. Next we group de table by that new variable and calculate the average of steps take in every 5 min interval by weekdays and weekends.
+
+```{r, weekdays}
+#Create the new variable
+library(timeDate)
+df2$Day<- isWeekday(df2$date, wday=1:5)
+        df2$Day[df2$Day== TRUE] <- "weekday"
+        df2$Day[df2$Day== FALSE] <- "weekend"
+        df2$Day<-factor(df2$Day)
+        
+#Calculate the average of the 5 min interval per group
+inter2<- df2%>% 
+        group_by(interval, Day) %>% 
+        summarise(steps = mean(steps, na.rm=TRUE))
+inter2
+
+#Reshape data frame for plotting
+library(reshape2)
+steps<-dcast(inter2, interval~Day, value.var= "steps")
+head(steps)
+
+#Plot the intervals
+par(mfrow=c(1,1))
+plot(steps$interval, steps$steps, xlab="5 minute intervals", ylab="average steps taken", type="n")
+        title(main= "Average daily activity pattern")
+        lines(steps$interval, steps$weekday, type="l", col="blue")
+        lines(steps$interval, steps$weekend, type="l", col="red")
+        legend("topright", pch = "_", col=c("blue", "red"), legend=c("weekday", "weekend"))
+```
+
+The plots shows that the pattern of steps taken through the day are similar during weekdays and weekends. However, there are some differences, the maximun of steps taken during the weekend is lower than during the week. The pattern of steps during the weekdays is more sedentary with peaks between the 50 and 150 intervals and then between 200 adn 250. In contrast, the pattern during the weekend is more active, with less peaks, but in general higher number of steps.
+
